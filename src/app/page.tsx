@@ -1,65 +1,308 @@
-import Image from "next/image";
+"use client";
+
+import { useCallback, useEffect } from "react";
+import { Menu, Sparkles } from "lucide-react";
+import { Sidebar } from "@/components/layout/Sidebar";
+import { ArtifactPanel } from "@/components/artifacts/ArtifactPanel";
+import { SettingsDialog } from "@/components/layout/SettingsDialog";
+import { ExportModal } from "@/components/layout/ExportModal";
+import { ProjectModal } from "@/components/layout/ProjectModal";
+import { FileManager } from "@/components/layout/FileManager";
+import { MessageList } from "@/components/chat/MessageList";
+import { MessageInput } from "@/components/chat/MessageInput";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { ToastProvider } from "@/components/ui/toast";
+import { Button } from "@/components/ui/button";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { useTheme } from "@/hooks/useTheme";
+import {
+  useConversationStore,
+  useSettingsStore,
+  useUIStore,
+  useArtifactStore,
+  useProjectStore,
+} from "@/stores";
+import { Message } from "@/types";
+import { cn } from "@/lib/utils";
 
 export default function Home() {
+  // Initialize hooks
+  useKeyboardShortcuts();
+  const theme = useTheme();
+
+  const {
+    conversations,
+    activeConversationId,
+    messages,
+    createConversation,
+    addMessage,
+    updateMessage,
+    updateConversation,
+  } = useConversationStore();
+  const { activeProjectId } = useProjectStore();
+  const { settings, apiKeys, activeModel } = useSettingsStore();
+  const { isLoading, setLoading, streamingMessageId, setStreamingMessageId, setError, openSidebar, isFileManagerOpen, closeFileManager } =
+    useUIStore();
+  const { addArtifact } = useArtifactStore();
+
+  const activeMessages = activeConversationId
+    ? messages[activeConversationId] || []
+    : [];
+
+  // Create a new conversation if none exists
+  useEffect(() => {
+    if (conversations.length === 0) {
+      createConversation(undefined, activeProjectId || undefined);
+    }
+  }, [conversations.length, createConversation, activeProjectId]);
+
+  // Handle sending a message
+  const handleSendMessage = useCallback(
+    async (content: string, files?: File[]) => {
+      if (!activeConversationId) return;
+
+      const apiKey = apiKeys[settings.aiProvider];
+      if (!apiKey) {
+        setError("Please configure your API key in settings (⌘,)");
+        return;
+      }
+
+      // Create user message
+      const userMessage: Message = {
+        id: crypto.randomUUID(),
+        conversationId: activeConversationId,
+        role: "user",
+        content,
+        files: files?.map((f) => ({
+          id: crypto.randomUUID(),
+          name: f.name,
+          type: f.type,
+          size: f.size,
+          path: "",
+          createdAt: new Date(),
+        })),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      addMessage(activeConversationId, userMessage);
+
+      // Update conversation title if first message
+      if (activeMessages.length === 0) {
+        const title = content.slice(0, 50) + (content.length > 50 ? "..." : "");
+        updateConversation(activeConversationId, { title });
+      }
+
+      // Create assistant message placeholder
+      const assistantMessage: Message = {
+        id: crypto.randomUUID(),
+        conversationId: activeConversationId,
+        role: "assistant",
+        content: "",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      addMessage(activeConversationId, assistantMessage);
+      setLoading(true);
+      setStreamingMessageId(assistantMessage.id);
+
+      try {
+        // Prepare messages for API
+        const apiMessages = [
+          ...activeMessages.map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+          { role: "user", content },
+        ];
+
+        // Call streaming API
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messages: apiMessages,
+            provider: settings.aiProvider,
+            model: activeModel,
+            apiKey,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to get response");
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error("No reader available");
+
+        const decoder = new TextDecoder();
+        let fullContent = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value);
+          const lines = chunk.split("\n").filter((line) => line.startsWith("data: "));
+
+          for (const line of lines) {
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              if (data.type === "text") {
+                fullContent += data.content;
+                updateMessage(activeConversationId, assistantMessage.id, {
+                  content: fullContent,
+                });
+              } else if (data.type === "error") {
+                throw new Error(data.error);
+              } else if (data.type === "artifact") {
+                const artifact = {
+                  id: crypto.randomUUID(),
+                  messageId: assistantMessage.id,
+                  type: data.artifact.type,
+                  title: data.artifact.title,
+                  content: data.artifact.content,
+                  language: data.artifact.language,
+                  version: 1,
+                  createdAt: new Date(),
+                };
+                addArtifact(artifact);
+              }
+            } catch {
+              // Ignore parse errors for incomplete chunks
+            }
+          }
+        }
+
+        // Extract code blocks as artifacts
+        extractArtifacts(fullContent, assistantMessage.id);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "Unknown error";
+        updateMessage(activeConversationId, assistantMessage.id, {
+          content: `Error: ${errorMessage}`,
+        });
+        setError(errorMessage);
+      } finally {
+        setLoading(false);
+        setStreamingMessageId(null);
+      }
+    },
+    [
+      activeConversationId,
+      activeMessages,
+      activeModel,
+      apiKeys,
+      settings.aiProvider,
+      addMessage,
+      updateMessage,
+      updateConversation,
+      setLoading,
+      setError,
+      setStreamingMessageId,
+      addArtifact,
+    ]
+  );
+
+  // Extract code blocks from response and create artifacts
+  const extractArtifacts = (content: string, messageId: string) => {
+    const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
+    let match;
+    let index = 0;
+
+    while ((match = codeBlockRegex.exec(content)) !== null) {
+      const language = match[1] || "text";
+      const code = match[2].trim();
+
+      if (code.length > 50) {
+        const artifact = {
+          id: crypto.randomUUID(),
+          messageId,
+          type: "code" as const,
+          title: `Code ${index + 1}`,
+          content: code,
+          language,
+          version: 1,
+          createdAt: new Date(),
+        };
+        addArtifact(artifact);
+        index++;
+      }
+    }
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+    <ToastProvider>
+      <TooltipProvider>
+        <div
+          className={cn(
+            "flex h-screen overflow-hidden transition-colors duration-300",
+            theme === "dark"
+              ? "bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950"
+              : "bg-gradient-to-br from-gray-100 via-white to-gray-100"
+          )}
+        >
+          {/* Background decoration */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            <div
+              className={cn(
+                "absolute -top-40 -right-40 w-80 h-80 rounded-full blur-[100px]",
+                theme === "dark" ? "bg-violet-600/20" : "bg-violet-400/20"
+              )}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+            <div
+              className={cn(
+                "absolute -bottom-40 -left-40 w-80 h-80 rounded-full blur-[100px]",
+                theme === "dark" ? "bg-indigo-600/20" : "bg-indigo-400/20"
+              )}
+            />
+          </div>
+
+          {/* Sidebar */}
+          <Sidebar />
+
+          {/* Main Content */}
+          <main className="relative flex-1 flex flex-col min-w-0 transition-all duration-300">
+            {/* Mobile Header */}
+            <div className="md:hidden flex items-center gap-3 p-4 border-b border-white/5">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={openSidebar}
+                className="h-8 w-8"
+              >
+                <Menu className="w-5 h-5" />
+              </Button>
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center">
+                  <Sparkles className="w-3 h-3 text-white" />
+                </div>
+                <span className="font-semibold text-white">CoWork</span>
+              </div>
+            </div>
+
+            {/* Messages */}
+            <MessageList
+              messages={activeMessages}
+              streamingMessageId={streamingMessageId}
+            />
+
+            {/* Input */}
+            <MessageInput onSend={handleSendMessage} isLoading={isLoading} />
+          </main>
+
+          {/* Artifact Panel */}
+          <ArtifactPanel />
+
+          {/* Modals */}
+          <SettingsDialog />
+          <ExportModal />
+          <ProjectModal />
+          <FileManager isOpen={isFileManagerOpen} onClose={closeFileManager} />
         </div>
-      </main>
-    </div>
+      </TooltipProvider>
+    </ToastProvider>
   );
 }
+
