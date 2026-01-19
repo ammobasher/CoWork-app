@@ -68,11 +68,24 @@ export class ProviderRegistry {
 export const providerRegistry = new ProviderRegistry();
 
 /**
+ * Context passed to tool execution
+ * Includes API keys and other runtime configuration
+ */
+export interface ToolContext {
+    apiKeys?: {
+        openai?: string;
+        anthropic?: string;
+        tavily?: string;
+    };
+    workspaceRoot?: string;
+}
+
+/**
  * Tool registration and execution system
  */
 export interface Tool {
     definition: ToolDefinition;
-    execute: (args: Record<string, unknown>) => Promise<unknown>;
+    execute: (args: Record<string, unknown>, context?: ToolContext) => Promise<unknown>;
 }
 
 export class ToolRegistry {
@@ -90,12 +103,12 @@ export class ToolRegistry {
         return Array.from(this.tools.values()).map(t => t.definition);
     }
 
-    async execute(name: string, args: Record<string, unknown>): Promise<unknown> {
+    async execute(name: string, args: Record<string, unknown>, context?: ToolContext): Promise<unknown> {
         const tool = this.tools.get(name);
         if (!tool) {
             throw new Error(`Tool ${name} not found`);
         }
-        return tool.execute(args);
+        return tool.execute(args, context);
     }
 }
 

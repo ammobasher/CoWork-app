@@ -1,5 +1,25 @@
-import { toolRegistry, Tool } from "./types";
-import { executePythonCode, executeJavaScriptCode } from "../sandbox";
+import { toolRegistry, Tool, ToolContext } from "./types";
+
+// Import all tools from the tools directory
+import {
+    generateImageTool,
+    analyzeImageTool,
+} from "./tools/image";
+import {
+    webSearchTool,
+    readUrlTool,
+} from "./tools/search";
+import {
+    readFileTool,
+    writeFileTool,
+    listDirectoryTool,
+    searchFilesTool,
+} from "./tools/filesystem";
+import {
+    runCommandTool,
+    runNpmScriptTool,
+    gitTool,
+} from "./tools/terminal";
 
 /**
  * Built-in tools for the AI
@@ -58,6 +78,8 @@ const executePythonTool: Tool = {
     },
     execute: async (args) => {
         const { code } = args as { code: string };
+        // Dynamic import to avoid Turbopack issues with child_process
+        const { executePythonCode } = await import("../sandbox");
         return await executePythonCode(code);
     },
 };
@@ -80,61 +102,9 @@ const executeJavaScriptTool: Tool = {
     },
     execute: async (args) => {
         const { code } = args as { code: string };
+        // Dynamic import to avoid Turbopack issues with child_process
+        const { executeJavaScriptCode } = await import("../sandbox");
         return await executeJavaScriptCode(code);
-    },
-};
-
-// Read File Tool
-const readFileTool: Tool = {
-    definition: {
-        name: "read_file",
-        description: "Read the contents of an uploaded file",
-        parameters: {
-            type: "object",
-            properties: {
-                fileId: {
-                    type: "string",
-                    description: "The ID of the file to read",
-                },
-            },
-            required: ["fileId"],
-        },
-    },
-    execute: async (args) => {
-        // File reading is handled by the API route
-        return { fileId: args.fileId, status: "pending" };
-    },
-};
-
-// Web Search Tool (mock for now)
-const webSearchTool: Tool = {
-    definition: {
-        name: "web_search",
-        description: "Search the web for information (mock implementation)",
-        parameters: {
-            type: "object",
-            properties: {
-                query: {
-                    type: "string",
-                    description: "The search query",
-                },
-            },
-            required: ["query"],
-        },
-    },
-    execute: async (args) => {
-        const { query } = args as { query: string };
-        // Mock response - can be replaced with actual search API
-        return {
-            query,
-            results: [
-                {
-                    title: `Search results for: ${query}`,
-                    snippet: "This is a mock search result. Web search functionality can be extended with APIs like Serper, Tavily, or SerpAPI.",
-                    url: "https://example.com",
-                },
-            ],
-        };
     },
 };
 
@@ -142,11 +112,30 @@ const webSearchTool: Tool = {
  * Register all built-in tools
  */
 export function registerBuiltinTools(): void {
+    // Core tools
     toolRegistry.register(createArtifactTool);
     toolRegistry.register(executePythonTool);
     toolRegistry.register(executeJavaScriptTool);
+
+    // File system tools
     toolRegistry.register(readFileTool);
+    toolRegistry.register(writeFileTool);
+    toolRegistry.register(listDirectoryTool);
+    toolRegistry.register(searchFilesTool);
+
+    // Terminal tools
+    toolRegistry.register(runCommandTool);
+    toolRegistry.register(runNpmScriptTool);
+    toolRegistry.register(gitTool);
+
+    // Web tools
     toolRegistry.register(webSearchTool);
+    toolRegistry.register(readUrlTool);
+
+    // Image tools
+    toolRegistry.register(generateImageTool);
+    toolRegistry.register(analyzeImageTool);
 }
 
-export { toolRegistry };
+export { toolRegistry } from "./types";
+export type { ToolContext } from "./types";

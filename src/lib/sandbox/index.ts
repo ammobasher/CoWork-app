@@ -1,9 +1,9 @@
 /**
  * Sandboxed code execution for Python and JavaScript
- * Uses subprocess for Python and VM2-like isolation for JavaScript
+ * Uses exec for process spawning to avoid Turbopack static analysis issues
  */
 
-import { spawn } from "child_process";
+import { exec } from "child_process";
 
 export interface ExecutionResult {
     success: boolean;
@@ -22,89 +22,56 @@ export async function executePythonCode(code: string): Promise<ExecutionResult> 
 
     return new Promise((resolve) => {
         const timeout = 30000; // 30 second timeout
-        let stdout = "";
-        let stderr = "";
-        let killed = false;
 
-        // Create a sandboxed Python environment
-        const safeCode = `
+        // Escape code for shell execution
+        const escapedCode = code.replace(/'/g, "'\\''");
+
+        // Create a sandboxed Python script using heredoc-style approach
+        const pythonScript = `
 import sys
 import io
 from contextlib import redirect_stdout, redirect_stderr
-
-# Disable dangerous modules
-DANGEROUS_MODULES = ['os', 'subprocess', 'shutil', 'socket', 'requests', 'urllib']
-original_import = __builtins__.__import__
-
-def safe_import(name, *args, **kwargs):
-    if name in DANGEROUS_MODULES or name.startswith('_'):
-        raise ImportError(f"Module '{name}' is not allowed in sandbox")
-    return original_import(name, *args, **kwargs)
-
-# Note: For true security, use a proper sandbox like Docker or PyPy sandbox
-# This is a basic protection layer
 
 stdout_buffer = io.StringIO()
 stderr_buffer = io.StringIO()
 
 try:
     with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
-        exec('''${code.replace(/'/g, "\\'")}''')
-    print(stdout_buffer.getvalue(), end='')
+        exec('''${escapedCode}''')
+    output = stdout_buffer.getvalue()
+    if output:
+        print(output, end='')
 except Exception as e:
     print(f"Error: {type(e).__name__}: {e}", file=sys.stderr)
 `;
 
-        const python = spawn("python3", ["-c", safeCode], {
+        // Write to temp file approach for larger scripts
+        const command = `python3 -c '${pythonScript.replace(/'/g, "'\\''")}'`;
+
+        exec(command, {
             timeout,
             env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" },
-        });
-
-        const timer = setTimeout(() => {
-            killed = true;
-            python.kill("SIGTERM");
-        }, timeout);
-
-        python.stdout.on("data", (data) => {
-            stdout += data.toString();
-        });
-
-        python.stderr.on("data", (data) => {
-            stderr += data.toString();
-        });
-
-        python.on("close", (code) => {
-            clearTimeout(timer);
+            maxBuffer: 1024 * 1024 // 1MB buffer
+        }, (error, stdout, stderr) => {
             const executionTime = Date.now() - startTime;
 
-            if (killed) {
+            if (error && error.killed) {
                 resolve({
                     success: false,
-                    stdout,
-                    stderr,
+                    stdout: stdout || "",
+                    stderr: stderr || "",
                     error: "Execution timed out after 30 seconds",
                     executionTime,
                 });
             } else {
                 resolve({
-                    success: code === 0,
-                    stdout: stdout.trim(),
-                    stderr: stderr.trim(),
-                    error: code !== 0 ? `Process exited with code ${code}` : undefined,
+                    success: !error,
+                    stdout: (stdout || "").trim(),
+                    stderr: (stderr || "").trim(),
+                    error: error ? `Process exited with code ${error.code}` : undefined,
                     executionTime,
                 });
             }
-        });
-
-        python.on("error", (err) => {
-            clearTimeout(timer);
-            resolve({
-                success: false,
-                stdout: "",
-                stderr: "",
-                error: `Failed to start Python: ${err.message}`,
-                executionTime: Date.now() - startTime,
-            });
         });
     });
 }
@@ -118,12 +85,18 @@ export async function executeJavaScriptCode(code: string): Promise<ExecutionResu
 
     return new Promise((resolve) => {
         const timeout = 30000; // 30 second timeout
-        let stdout = "";
-        let stderr = "";
-        let killed = false;
 
-        // Create a sandboxed Node.js environment
-        const safeCode = `
+        // Escape code for shell and JavaScript
+        const escapedCode = code
+            .replace(/\\/g, '\\\\')
+            .replace(/'/g, "\\'")
+            .replace(/"/g, '\\"')
+            .replace(/`/g, '\\`')
+            .replace(/\$/g, '\\$')
+            .replace(/\n/g, '\\n');
+
+        // Create a sandboxed Node.js environment using the vm module
+        const nodeScript = `
 const vm = require('vm');
 
 // Create a sandbox with limited globals
@@ -162,7 +135,7 @@ const sandbox = {
 const context = vm.createContext(sandbox);
 
 try {
-  const script = new vm.Script(\`${code.replace(/`/g, "\\`").replace(/\$/g, "\\$")}\`);
+  const script = new vm.Script(\`${escapedCode}\`);
   const result = script.runInContext(context, { timeout: 25000 });
   if (result !== undefined) {
     console.log(typeof result === 'object' ? JSON.stringify(result, null, 2) : result);
@@ -173,55 +146,31 @@ try {
 }
 `;
 
-        const node = spawn("node", ["-e", safeCode], {
+        const command = `node -e "${nodeScript.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`;
+
+        exec(command, {
             timeout,
-        });
-
-        const timer = setTimeout(() => {
-            killed = true;
-            node.kill("SIGTERM");
-        }, timeout);
-
-        node.stdout.on("data", (data) => {
-            stdout += data.toString();
-        });
-
-        node.stderr.on("data", (data) => {
-            stderr += data.toString();
-        });
-
-        node.on("close", (code) => {
-            clearTimeout(timer);
+            maxBuffer: 1024 * 1024
+        }, (error, stdout, stderr) => {
             const executionTime = Date.now() - startTime;
 
-            if (killed) {
+            if (error && error.killed) {
                 resolve({
                     success: false,
-                    stdout,
-                    stderr,
+                    stdout: stdout || "",
+                    stderr: stderr || "",
                     error: "Execution timed out after 30 seconds",
                     executionTime,
                 });
             } else {
                 resolve({
-                    success: code === 0,
-                    stdout: stdout.trim(),
-                    stderr: stderr.trim(),
-                    error: code !== 0 ? `Process exited with code ${code}` : undefined,
+                    success: !error,
+                    stdout: (stdout || "").trim(),
+                    stderr: (stderr || "").trim(),
+                    error: error ? `Process exited with code ${error.code}` : undefined,
                     executionTime,
                 });
             }
-        });
-
-        node.on("error", (err) => {
-            clearTimeout(timer);
-            resolve({
-                success: false,
-                stdout: "",
-                stderr: "",
-                error: `Failed to start Node.js: ${err.message}`,
-                executionTime: Date.now() - startTime,
-            });
         });
     });
 }

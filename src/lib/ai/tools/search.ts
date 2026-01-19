@@ -94,14 +94,28 @@ export const webSearchTool: Tool = {
 
             // Parse results from HTML (basic extraction)
             const results: Array<{ title: string; snippet: string; url: string }> = [];
-            const resultRegex = /<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>.*?<a[^>]*class="result__snippet"[^>]*>([^<]*)<\/a>/gs;
+
+            // Simpler pattern matching without the 's' flag
+            const resultRegex = /<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/g;
+            const snippetRegex = /<a[^>]*class="result__snippet"[^>]*>([^<]*)<\/a>/g;
+
+            const titles: Array<{ url: string; title: string }> = [];
             let match;
 
-            while ((match = resultRegex.exec(html)) !== null && results.length < maxResults) {
+            while ((match = resultRegex.exec(html)) !== null && titles.length < maxResults) {
+                titles.push({ url: match[1], title: match[2].trim() });
+            }
+
+            const snippets: string[] = [];
+            while ((match = snippetRegex.exec(html)) !== null && snippets.length < maxResults) {
+                snippets.push(match[1].trim());
+            }
+
+            for (let i = 0; i < Math.min(titles.length, snippets.length); i++) {
                 results.push({
-                    title: match[2].trim(),
-                    url: match[1],
-                    snippet: match[3].trim(),
+                    title: titles[i].title,
+                    url: titles[i].url,
+                    snippet: snippets[i] || "",
                 });
             }
 
