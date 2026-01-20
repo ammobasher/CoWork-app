@@ -47,7 +47,7 @@ export function Message({ message, isStreaming = false }: MessageProps) {
             <div className="flex-1 min-w-0">
                 {/* Role label */}
                 <div className="flex items-center gap-2 mb-2">
-                    <span className="text-sm font-medium text-gray-300">
+                    <span className="text-sm font-medium text-gray-100">
                         {isUser ? "You" : "CoWork"}
                     </span>
                     {isStreaming && (
@@ -62,23 +62,23 @@ export function Message({ message, isStreaming = false }: MessageProps) {
                 <div
                     className={cn(
                         "prose prose-invert prose-sm max-w-none",
-                        // Main paragraph text - high contrast
-                        "prose-p:text-gray-100 prose-p:leading-relaxed",
+                        // Main paragraph text - high contrast (improved)
+                        "prose-p:text-gray-50 prose-p:leading-relaxed",
                         // Headings - maximum contrast
                         "prose-headings:text-white prose-headings:font-semibold",
                         // Bold text
                         "prose-strong:text-white prose-strong:font-semibold",
-                        // Inline code - visible but distinct
-                        "prose-code:text-emerald-300 prose-code:bg-white/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-code:before:content-none prose-code:after:content-none",
+                        // Inline code - visible but distinct (improved)
+                        "prose-code:text-emerald-200 prose-code:bg-white/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-code:before:content-none prose-code:after:content-none",
                         // Code blocks
                         "prose-pre:bg-transparent prose-pre:p-0",
-                        // Links - bright and visible
-                        "prose-a:text-blue-400 prose-a:no-underline hover:prose-a:underline",
-                        // Lists - high contrast
-                        "prose-ul:text-gray-100 prose-ol:text-gray-100",
-                        "prose-li:text-gray-100 prose-li:marker:text-gray-400",
+                        // Links - bright and visible (improved)
+                        "prose-a:text-blue-300 prose-a:no-underline hover:prose-a:underline",
+                        // Lists - high contrast (improved)
+                        "prose-ul:text-gray-50 prose-ol:text-gray-50",
+                        "prose-li:text-gray-50 prose-li:marker:text-gray-300",
                         // Blockquotes
-                        "prose-blockquote:text-gray-200 prose-blockquote:border-l-violet-500"
+                        "prose-blockquote:text-gray-100 prose-blockquote:border-l-violet-500"
                     )}
                 >
                     <ReactMarkdown
@@ -144,7 +144,7 @@ function CodeBlock({ language, code }: CodeBlockProps) {
         <div className="relative group/code rounded-xl bg-black/40 border border-white/10 overflow-hidden">
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-2 border-b border-white/10 bg-white/5">
-                <span className="text-xs text-white/50 font-medium uppercase tracking-wider">
+                <span className="text-xs text-white/80 font-medium uppercase tracking-wider">
                     {language}
                 </span>
                 <div className="flex items-center gap-1">

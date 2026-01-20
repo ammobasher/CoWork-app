@@ -205,38 +205,72 @@ export const runNpmScriptTool: Tool = {
 export const gitTool: Tool = {
     definition: {
         name: "git",
-        description: "Execute git commands safely. Useful for version control operations like status, diff, log, branch, commit, etc.",
+        description: `Execute git commands safely. Useful for version control operations.
+
+Supported commands:
+- status, diff, log, branch: Information commands
+- add, commit: Staging and committing
+- push: Allowed with safety checks (blocks force push to main/master)
+- pull, fetch: Update operations
+
+Force push to main/master is BLOCKED for safety.`,
         parameters: {
             type: "object",
             properties: {
                 subcommand: {
                     type: "string",
-                    description: "Git subcommand (e.g., 'status', 'diff', 'log', 'branch', 'add', 'commit')",
+                    description: "Git subcommand (e.g., 'status', 'diff', 'log', 'branch', 'add', 'commit', 'push')",
                 },
                 args: {
                     type: "array",
                     items: { type: "string" },
                     description: "Arguments for the git subcommand",
                 },
+                allow_push: {
+                    type: "boolean",
+                    description: "Explicitly allow push operations. Default: false",
+                },
             },
             required: ["subcommand"],
         },
     },
     execute: async (args) => {
-        const { subcommand, args: gitArgs = [] } = args as {
+        const { subcommand, args: gitArgs = [], allow_push = false } = args as {
             subcommand: string;
             args?: string[];
+            allow_push?: boolean;
         };
 
         // Build the git command
         const command = `git ${subcommand} ${gitArgs.join(" ")}`.trim();
 
-        // Special handling for certain commands
-        if (["push", "force-push"].includes(subcommand)) {
-            return {
-                success: false,
-                error: "Git push operations require manual execution for safety",
-            };
+        // Safety checks for destructive operations
+        if (subcommand === "push") {
+            if (!allow_push) {
+                return {
+                    success: false,
+                    error: "Git push requires explicit permission. Set allow_push: true to enable.",
+                    suggestion: "Review changes with 'git diff' and 'git log' first, then retry with allow_push: true",
+                };
+            }
+
+            // Block force push to main/master
+            const hasForce = gitArgs.some(arg => arg.includes("--force") || arg.includes("-f"));
+            if (hasForce) {
+                // Check current branch
+                const branchCheck = await runCommandTool.execute({ command: "git branch --show-current" });
+                const currentBranch = typeof branchCheck === "object" && "stdout" in branchCheck
+                    ? (branchCheck.stdout as string).trim()
+                    : "";
+
+                if (currentBranch === "main" || currentBranch === "master") {
+                    return {
+                        success: false,
+                        error: "Force push to main/master branch is blocked for safety",
+                        current_branch: currentBranch,
+                    };
+                }
+            }
         }
 
         return runCommandTool.execute({ command, timeout: 30000 });
