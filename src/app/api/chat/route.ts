@@ -141,7 +141,7 @@ async function handleGeminiChat(
 
     // Loop to handle function calls
     let currentContent: string | { functionResponse: { name: string; response: unknown } } = lastMessage.content;
-    let maxIterations = 10;
+    let maxIterations = 50; // Increased from 10 to support complex multi-step reasoning
 
     while (maxIterations > 0) {
         maxIterations--;
@@ -271,7 +271,7 @@ async function handleOpenAIChat(
         },
     })) : undefined;
 
-    let maxIterations = 10;
+    let maxIterations = 50; // Increased from 10 to support complex multi-step reasoning
 
     while (maxIterations > 0) {
         maxIterations--;
@@ -400,7 +400,7 @@ async function handleAnthropicChat(
         input_schema: tool.parameters as Record<string, unknown>,
     })) : undefined;
 
-    let maxIterations = 10;
+    let maxIterations = 50; // Increased from 10 to support complex multi-step reasoning
 
     while (maxIterations > 0) {
         maxIterations--;

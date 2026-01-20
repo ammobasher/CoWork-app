@@ -327,20 +327,20 @@
   color: #d97706;
 }
 
-/* Prose adjustments for dark mode - HIGH CONTRAST */
+/* Prose adjustments for dark mode - IMPROVED HIGH CONTRAST */
 .dark .prose-invert {
-  --tw-prose-body: #e2e8f0;
+  --tw-prose-body: #f1f5f9;
   --tw-prose-headings: #ffffff;
-  --tw-prose-links: #60a5fa;
+  --tw-prose-links: #93c5fd;
   --tw-prose-bold: #ffffff;
-  --tw-prose-counters: #9ca3af;
-  --tw-prose-bullets: #9ca3af;
+  --tw-prose-counters: #cbd5e1;
+  --tw-prose-bullets: #cbd5e1;
   --tw-prose-hr: rgba(255, 255, 255, 0.2);
-  --tw-prose-quotes: #d1d5db;
+  --tw-prose-quotes: #e2e8f0;
   --tw-prose-quote-borders: #8b5cf6;
-  --tw-prose-captions: #9ca3af;
-  --tw-prose-code: #6ee7b7;
-  --tw-prose-pre-code: #e2e8f0;
+  --tw-prose-captions: #cbd5e1;
+  --tw-prose-code: #86efac;
+  --tw-prose-pre-code: #f1f5f9;
   --tw-prose-pre-bg: rgba(0, 0, 0, 0.5);
   --tw-prose-th-borders: rgba(255, 255, 255, 0.2);
   --tw-prose-td-borders: rgba(255, 255, 255, 0.1);

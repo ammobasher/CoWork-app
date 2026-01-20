@@ -138,7 +138,7 @@ export function MessageInput({
                         placeholder={placeholder}
                         rows={1}
                         className={cn(
-                            "flex-1 resize-none bg-transparent text-white placeholder:text-white/40",
+                            "flex-1 resize-none bg-transparent text-white placeholder:text-white/60",
                             "focus:outline-none text-sm leading-relaxed",
                             "min-h-[36px] max-h-[200px] py-2"
                         )}
@@ -175,7 +175,7 @@ export function MessageInput({
             </div>
 
             {/* Hint */}
-            <p className="text-center text-xs text-white/30 mt-2">
+            <p className="text-center text-xs text-white/60 mt-2">
                 Press Enter to send, Shift + Enter for new line
             </p>
         </div>

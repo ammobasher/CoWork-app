@@ -20,6 +20,24 @@ import {
     runNpmScriptTool,
     gitTool,
 } from "./tools/terminal";
+import {
+    editFileTool,
+    multiEditTool,
+    insertLineTool,
+} from "./tools/edit";
+import {
+    grepTool,
+    findFileTool,
+} from "./tools/grep";
+import {
+    batchRenameTool,
+    batchDeleteTool,
+    batchCopyTool,
+} from "./tools/batch";
+import {
+    rlmTool,
+    analyzeCodebaseTool,
+} from "./tools/rlm";
 
 /**
  * Built-in tools for the AI
@@ -117,11 +135,25 @@ export function registerBuiltinTools(): void {
     toolRegistry.register(executePythonTool);
     toolRegistry.register(executeJavaScriptTool);
 
-    // File system tools
+    // File system tools - Basic
     toolRegistry.register(readFileTool);
     toolRegistry.register(writeFileTool);
     toolRegistry.register(listDirectoryTool);
     toolRegistry.register(searchFilesTool);
+
+    // File system tools - Advanced
+    toolRegistry.register(editFileTool);
+    toolRegistry.register(multiEditTool);
+    toolRegistry.register(insertLineTool);
+
+    // Search tools
+    toolRegistry.register(grepTool);
+    toolRegistry.register(findFileTool);
+
+    // Batch operations
+    toolRegistry.register(batchRenameTool);
+    toolRegistry.register(batchDeleteTool);
+    toolRegistry.register(batchCopyTool);
 
     // Terminal tools
     toolRegistry.register(runCommandTool);
@@ -135,6 +167,10 @@ export function registerBuiltinTools(): void {
     // Image tools
     toolRegistry.register(generateImageTool);
     toolRegistry.register(analyzeImageTool);
+
+    // RLM tools
+    toolRegistry.register(rlmTool);
+    toolRegistry.register(analyzeCodebaseTool);
 }
 
 export { toolRegistry } from "./types";
