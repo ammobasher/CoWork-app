@@ -131,21 +131,21 @@ export class ParallelExecutor {
     failedTasks: Task[]
   ): Promise<void> {
     const pending = new Set(tasks.map(t => t.id));
-    const inProgress = new Set<string>();
+    const runningPromises = new Map<string, Promise<void>>();
 
-    while (pending.size > 0 || inProgress.size > 0) {
+    while (pending.size > 0 || runningPromises.size > 0) {
       // Find tasks that can run now (all dependencies met)
       const ready = tasks.filter(task =>
         pending.has(task.id) &&
         this.areDependenciesMet(task, results) &&
-        inProgress.size < this.maxParallelTasks
+        runningPromises.size < this.maxParallelTasks
       );
 
-      if (ready.length === 0 && inProgress.size === 0) {
+      if (ready.length === 0 && runningPromises.size === 0) {
         // Deadlock or all remaining tasks have unmet dependencies
         const remainingTasks = tasks.filter(t => pending.has(t.id));
         if (remainingTasks.length > 0) {
-          console.error('Deadlock or unmet dependencies:', remainingTasks);
+          console.error('[Executor] Deadlock or unmet dependencies:', remainingTasks.map(t => t.id));
           remainingTasks.forEach(t => {
             t.status = 'skipped';
             t.error = 'Unmet dependencies or deadlock';
@@ -156,33 +156,43 @@ export class ParallelExecutor {
         break;
       }
 
-      // Execute ready tasks in parallel
-      const promises = ready.map(async (task) => {
+      // Start new tasks
+      for (const task of ready) {
         pending.delete(task.id);
-        inProgress.add(task.id);
 
-        try {
-          const result = await this.executeTask(task, results);
-          results.set(task.id, result);
-          task.status = 'completed';
-          task.result = result;
+        const taskPromise = (async () => {
+          try {
+            task.status = 'in_progress';
+            this.context.onProgress?.(task);
 
-          this.context.onTaskComplete?.(task);
-        } catch (error) {
-          task.status = 'failed';
-          task.error = error instanceof Error ? error.message : 'Unknown error';
-          failedTasks.push(task);
+            const result = await this.executeTask(task, results);
+            results.set(task.id, result);
+            task.status = 'completed';
+            task.result = result;
 
-          this.context.onTaskFailed?.(task, error as Error);
-        } finally {
-          inProgress.delete(task.id);
-        }
-      });
+            this.context.onTaskComplete?.(task);
+          } catch (error) {
+            task.status = 'failed';
+            task.error = error instanceof Error ? error.message : 'Unknown error';
+            failedTasks.push(task);
 
-      if (promises.length > 0) {
-        await Promise.race(promises); // Wait for at least one to complete
-      } else {
-        // No tasks ready, wait a bit
+            this.context.onTaskFailed?.(task, error as Error);
+          }
+        })();
+
+        runningPromises.set(task.id, taskPromise);
+
+        // Remove from running promises when done
+        taskPromise.finally(() => {
+          runningPromises.delete(task.id);
+        });
+      }
+
+      // Wait for at least one running task to complete (if any are running)
+      if (runningPromises.size > 0) {
+        await Promise.race(Array.from(runningPromises.values()));
+      } else if (pending.size > 0) {
+        // No tasks ready but some pending - wait a bit and check again
         await new Promise(resolve => setTimeout(resolve, 100));
       }
     }
