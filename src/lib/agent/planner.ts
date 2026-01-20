@@ -6,6 +6,7 @@
 
 import { nanoid } from 'nanoid';
 import { Task, TaskPlan, PlanningContext, PlanStrategy } from './types';
+import { validateTaskPlan, extractJSON, safeJSONParse } from '@/lib/utils/validation';
 
 export class AgentPlanner {
   private provider: 'anthropic' | 'openai' | 'gemini';
@@ -100,20 +101,19 @@ Respond ONLY with valid JSON.`;
    */
   private parsePlanResponse(response: string, availableTools: string[]): Task[] {
     try {
-      // Extract JSON from response (might be wrapped in markdown code blocks)
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        throw new Error('No JSON found in response');
+      // Extract and validate JSON from response
+      const jsonStr = extractJSON(response);
+      if (!jsonStr) {
+        throw new Error('No JSON found in planning response');
       }
 
-      const parsed = JSON.parse(jsonMatch[0]);
-
-      if (!parsed.tasks || !Array.isArray(parsed.tasks)) {
-        throw new Error('Invalid plan structure');
+      const planData = safeJSONParse(jsonStr, validateTaskPlan);
+      if (!planData || !planData.tasks) {
+        throw new Error('Invalid task plan structure');
       }
 
       // Convert to Task objects
-      return parsed.tasks.map((t: any, idx: number) => {
+      return planData.tasks.map((t, idx) => {
         const task: Task = {
           id: `task-${idx}`,
           description: t.description || 'Unnamed task',
