@@ -6,6 +6,7 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { hasFileSystemAccess } from '@/lib/utils/runtime';
 
 export interface ContextBuildOptions {
   extensions?: string[];
@@ -48,6 +49,11 @@ export async function buildCodebaseContext(
   rootPath: string,
   options: ContextBuildOptions = {}
 ): Promise<CodebaseContext> {
+  // Runtime check - file system operations require Node.js
+  if (!hasFileSystemAccess()) {
+    throw new Error('File system operations are not available in this runtime environment. This requires Node.js runtime.');
+  }
+
   const {
     extensions = ['.ts', '.tsx', '.js', '.jsx', '.py', '.java', '.go', '.rs', '.c', '.cpp', '.h'],
     exclude = ['node_modules', '.git', 'dist', 'build', '.next', 'coverage', '__pycache__'],
@@ -61,9 +67,14 @@ export async function buildCodebaseContext(
   const fileTypes: Record<string, number> = {};
   let totalSize = 0;
   let fileCount = 0;
+  const MAX_DEPTH = 10; // Maximum directory depth to prevent stack overflow
 
-  async function scanDir(dir: string): Promise<void> {
+  async function scanDir(dir: string, currentDepth: number = 0): Promise<void> {
     if (fileCount >= maxFiles) return;
+    if (currentDepth > MAX_DEPTH) {
+      console.warn(`[Context Builder] Max depth ${MAX_DEPTH} reached, skipping: ${dir}`);
+      return;
+    }
 
     try {
       const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -78,7 +89,7 @@ export async function buildCodebaseContext(
         const relativePath = path.relative(rootPath, fullPath);
 
         if (entry.isDirectory()) {
-          await scanDir(fullPath);
+          await scanDir(fullPath, currentDepth + 1);
         } else if (entry.isFile()) {
           const ext = path.extname(entry.name);
 
@@ -122,7 +133,7 @@ export async function buildCodebaseContext(
     }
   }
 
-  await scanDir(rootPath);
+  await scanDir(rootPath, 0); // Start at depth 0
 
   const result: CodebaseContext = {
     files,
@@ -147,6 +158,11 @@ export async function buildFileContext(
   filePaths: string[],
   workspaceRoot: string = process.cwd()
 ): Promise<Record<string, string>> {
+  // Runtime check - file system operations require Node.js
+  if (!hasFileSystemAccess()) {
+    throw new Error('File system operations are not available in this runtime environment. This requires Node.js runtime.');
+  }
+
   const context: Record<string, string> = {};
 
   for (const filePath of filePaths) {
@@ -171,6 +187,11 @@ export async function buildDirectoryStructure(
   rootPath: string,
   options: Pick<ContextBuildOptions, 'exclude'> = {}
 ): Promise<DirectoryStructure> {
+  // Runtime check - file system operations require Node.js
+  if (!hasFileSystemAccess()) {
+    throw new Error('File system operations are not available in this runtime environment. This requires Node.js runtime.');
+  }
+
   const { exclude = ['node_modules', '.git', 'dist', 'build'] } = options;
 
   async function buildTree(dir: string, depth: number = 0): Promise<DirectoryStructure> {
@@ -232,6 +253,11 @@ export async function buildContextSummary(
   rootPath: string,
   options: ContextBuildOptions = {}
 ): Promise<{ summary: string; structure: DirectoryStructure }> {
+  // Runtime check - file system operations require Node.js
+  if (!hasFileSystemAccess()) {
+    throw new Error('File system operations are not available in this runtime environment. This requires Node.js runtime.');
+  }
+
   const structure = await buildDirectoryStructure(rootPath, options);
   const context = await buildCodebaseContext(rootPath, {
     ...options,

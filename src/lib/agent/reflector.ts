@@ -5,6 +5,7 @@
  */
 
 import { Task, ReflectionResult } from './types';
+import { validateReflectionResult, extractJSON, safeJSONParse, isObject, isString } from '@/lib/utils/validation';
 
 export class AgentReflector {
   private provider: 'anthropic' | 'openai' | 'gemini';
@@ -107,9 +108,29 @@ If the task is fundamentally impossible, set canFix to false.
 
     try {
       const response = await this.callLLM(correctionPrompt);
-      const parsed = JSON.parse(this.extractJSON(response));
+      const jsonStr = extractJSON(response);
+
+      if (!jsonStr) {
+        console.warn('[Reflector] No JSON found in correction response');
+        return null;
+      }
+
+      // Parse and validate structure
+      const parsed: any = JSON.parse(jsonStr);
+      if (!isObject(parsed) || typeof parsed.canFix !== 'boolean') {
+        console.warn('[Reflector] Invalid correction response structure');
+        return null;
+      }
 
       if (!parsed.canFix) {
+        return null;
+      }
+
+      // Validate alternative structure
+      if (!isObject(parsed.alternative) ||
+          !isString(parsed.alternative.description) ||
+          !isString(parsed.alternative.tool)) {
+        console.warn('[Reflector] Invalid alternative task structure');
         return null;
       }
 
@@ -117,7 +138,7 @@ If the task is fundamentally impossible, set canFix to false.
         id: `${failedTask.id}-retry`,
         description: parsed.alternative.description,
         tool: parsed.alternative.tool,
-        args: parsed.alternative.args,
+        args: parsed.alternative.args || {},
         status: 'pending',
         dependencies: failedTask.dependencies,
         metadata: {
@@ -168,14 +189,22 @@ Respond in JSON:
 
     try {
       const response = await this.callLLM(patternPrompt);
-      const parsed = JSON.parse(this.extractJSON(response));
+      const jsonStr = extractJSON(response);
+
+      if (!jsonStr) {
+        console.warn('[Reflector] No JSON found in pattern analysis response');
+        return { commonIssues: [], successPatterns: [], recommendations: [] };
+      }
+
+      const parsed: any = JSON.parse(jsonStr);
 
       return {
-        commonIssues: parsed.commonIssues || [],
-        successPatterns: parsed.successPatterns || [],
-        recommendations: parsed.recommendations || [],
+        commonIssues: Array.isArray(parsed.commonIssues) ? parsed.commonIssues : [],
+        successPatterns: Array.isArray(parsed.successPatterns) ? parsed.successPatterns : [],
+        recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations : [],
       };
     } catch (error) {
+      console.error('[Reflector] Failed to analyze patterns:', error);
       return {
         commonIssues: [],
         successPatterns: [],
@@ -220,14 +249,22 @@ Respond in JSON:
 
     try {
       const response = await this.callLLM(evaluationPrompt);
-      const parsed = JSON.parse(this.extractJSON(response));
+      const jsonStr = extractJSON(response);
+
+      if (!jsonStr) {
+        console.warn('[Reflector] No JSON found in plan evaluation response');
+        return { score: 0.5, concerns: ['Failed to parse response'], improvements: [] };
+      }
+
+      const parsed: any = JSON.parse(jsonStr);
 
       return {
-        score: parsed.score || 0.5,
-        concerns: parsed.concerns || [],
-        improvements: parsed.improvements || [],
+        score: typeof parsed.score === 'number' ? Math.max(0, Math.min(1, parsed.score)) : 0.5,
+        concerns: Array.isArray(parsed.concerns) ? parsed.concerns : [],
+        improvements: Array.isArray(parsed.improvements) ? parsed.improvements : [],
       };
     } catch (error) {
+      console.error('[Reflector] Failed to evaluate plan:', error);
       return {
         score: 0.5,
         concerns: ['Failed to evaluate plan'],
@@ -241,15 +278,25 @@ Respond in JSON:
    */
   private parseReflectionResponse(response: string): ReflectionResult {
     try {
-      const parsed = JSON.parse(this.extractJSON(response));
+      const jsonStr = extractJSON(response);
+      if (!jsonStr) {
+        console.warn('[Reflector] No JSON found in reflection response');
+        throw new Error('No JSON found in reflection response');
+      }
+
+      const parsed = safeJSONParse(jsonStr, validateReflectionResult);
+      if (!parsed) {
+        console.warn('[Reflector] Invalid reflection result structure');
+        throw new Error('Invalid reflection result structure');
+      }
 
       return {
-        success: parsed.success === true,
-        confidence: Math.max(0, Math.min(1, parsed.confidence || 0.5)),
-        issues: Array.isArray(parsed.issues) ? parsed.issues : [],
-        suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [],
-        shouldRetry: parsed.shouldRetry === true,
-        alternativeApproach: parsed.alternativeApproach || undefined,
+        success: parsed.success,
+        confidence: parsed.confidence,
+        issues: parsed.issues,
+        suggestions: parsed.suggestions,
+        shouldRetry: parsed.shouldRetry,
+        alternativeApproach: parsed.alternativeApproach,
       };
     } catch (error) {
       console.error('Failed to parse reflection response:', error);
@@ -286,17 +333,6 @@ Respond in JSON:
         shouldRetry: false,
       };
     }
-  }
-
-  /**
-   * Extract JSON from response (handles markdown code blocks)
-   */
-  private extractJSON(response: string): string {
-    const jsonMatch = response.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('No JSON found in response');
-    }
-    return jsonMatch[0];
   }
 
   /**

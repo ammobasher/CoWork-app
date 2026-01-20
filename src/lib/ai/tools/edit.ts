@@ -7,6 +7,7 @@
 import { Tool } from "../types";
 import * as fs from "fs/promises";
 import * as path from "path";
+import { hasFileSystemAccess } from "@/lib/utils/runtime";
 
 const WORKSPACE_ROOT = process.cwd();
 
@@ -59,6 +60,15 @@ The search string must match EXACTLY (including whitespace).`,
     },
   },
   execute: async (args) => {
+    // Runtime check - file system operations require Node.js
+    if (!hasFileSystemAccess()) {
+      return {
+        success: false,
+        error: 'File system operations are not available in this runtime environment',
+        hint: 'This tool requires Node.js runtime. Ensure API routes are running server-side.',
+      };
+    }
+
     const { path: filePath, search, replace, replace_all = false } = args as {
       path: string;
       search: string;
@@ -150,6 +160,15 @@ Edits are applied in order, so later edits see the results of earlier ones.`,
     },
   },
   execute: async (args) => {
+    // Runtime check - file system operations require Node.js
+    if (!hasFileSystemAccess()) {
+      return {
+        success: false,
+        error: 'File system operations are not available in this runtime environment',
+        hint: 'This tool requires Node.js runtime. Ensure API routes are running server-side.',
+      };
+    }
+
     const { path: filePath, edits } = args as {
       path: string;
       edits: Array<{ search: string; replace: string }>;
@@ -231,6 +250,15 @@ Line numbers are 1-based (first line is line 1).`,
     },
   },
   execute: async (args) => {
+    // Runtime check - file system operations require Node.js
+    if (!hasFileSystemAccess()) {
+      return {
+        success: false,
+        error: 'File system operations are not available in this runtime environment',
+        hint: 'This tool requires Node.js runtime. Ensure API routes are running server-side.',
+      };
+    }
+
     const { path: filePath, line, content } = args as {
       path: string;
       line: number;

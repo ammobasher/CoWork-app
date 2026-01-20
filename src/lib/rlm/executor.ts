@@ -13,6 +13,7 @@ import {
   ProcessingStrategy,
 } from './types';
 import { DataChunker } from './chunking';
+import { validateSubtasks, extractJSON, safeJSONParse } from '@/lib/utils/validation';
 
 export class RLMExecutor {
   private provider: 'anthropic' | 'openai' | 'gemini';
@@ -187,12 +188,16 @@ Respond with JSON array: [{ "subtask": "description", "needs": ["var1", "var2"] 
       'decompose'
     );
 
-    // Parse subtasks
-    let subtasks: Array<{ subtask: string; needs: string[] }>;
-    try {
-      subtasks = JSON.parse(decomposition);
-    } catch {
-      // If decomposition fails, fall back to direct processing
+    // Parse and validate subtasks with improved error handling
+    const jsonStr = extractJSON(decomposition);
+    if (!jsonStr) {
+      console.warn('[RLM] No JSON found in decomposition response, falling back to direct processing');
+      return this.makeRLMCall(task, context, 'direct-call');
+    }
+
+    const subtasks = safeJSONParse(jsonStr, validateSubtasks);
+    if (!subtasks) {
+      console.warn('[RLM] Invalid subtask structure in response, falling back to direct processing');
       return this.makeRLMCall(task, context, 'direct-call');
     }
 
