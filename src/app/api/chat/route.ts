@@ -114,8 +114,13 @@ async function handleGeminiChat(
         parameters: tool.parameters,
     })) : undefined;
 
+    // Extract system message for Gemini
+    const systemMessage = messages.find(msg => msg.role === "system");
+    const nonSystemMessages = messages.filter(msg => msg.role !== "system");
+
     const genModel = genAI.getGenerativeModel({
         model: model || "gemini-2.0-flash-exp",
+        ...(systemMessage && { systemInstruction: systemMessage.content }),
         ...(functionDeclarations && {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             tools: [{ functionDeclarations }] as any,
@@ -123,13 +128,13 @@ async function handleGeminiChat(
         }),
     });
 
-    // Convert messages to Gemini format
-    const history = messages.slice(0, -1).map((msg) => ({
+    // Convert messages to Gemini format (excluding system message)
+    const history = nonSystemMessages.slice(0, -1).map((msg) => ({
         role: msg.role === "assistant" ? "model" : "user",
         parts: [{ text: msg.content }],
     }));
 
-    const lastMessage = messages[messages.length - 1];
+    const lastMessage = nonSystemMessages[nonSystemMessages.length - 1];
 
     const chat = genModel.startChat({
         history,

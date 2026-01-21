@@ -108,8 +108,35 @@ export default function Home() {
       setStreamingMessageId(assistantMessage.id);
 
       try {
-        // Prepare messages for API
+        // Prepare messages for API - include system prompt for tool usage
+        const systemPrompt = `You are CoWork, an autonomous AI coding agent. You have access to tools and MUST use them immediately when the user asks for actions.
+
+CRITICAL RULES:
+1. NEVER ask for clarification or permission - just use tools immediately
+2. NEVER describe what you "would" do - actually DO it by calling tools
+3. When asked to list files, IMMEDIATELY call list_directory with path "."
+4. When asked about "current directory" or "this directory", use path "."
+5. When asked to read a file, IMMEDIATELY call read_file
+6. When asked to search, IMMEDIATELY call grep or search_files
+7. When asked to run a command, IMMEDIATELY call run_command
+
+The workspace root is the current directory ("."). Use "." as the default path for any file or directory operations.
+
+Available tools:
+- list_directory: path="." for current directory
+- read_file: Read file contents
+- write_file: Write to files
+- search_files: Find files by pattern
+- grep: Search content in files
+- run_command: Execute shell commands
+- create_artifact: Display code/content
+- execute_python: Run Python code
+- execute_javascript: Run JavaScript code
+
+You are an AGENT - you take action, you don't ask questions. If the user says "list files", you call list_directory immediately. No exceptions.`;
+
         const apiMessages = [
+          { role: "system", content: systemPrompt },
           ...activeMessages.map((m) => ({
             role: m.role,
             content: m.content,
@@ -152,6 +179,43 @@ export default function Home() {
 
               if (data.type === "text") {
                 fullContent += data.content;
+                updateMessage(activeConversationId, assistantMessage.id, {
+                  content: fullContent,
+                });
+              } else if (data.type === "tool_call") {
+                // Show tool call in the message
+                const toolInfo = `\n🔧 **Calling tool:** \`${data.name}\`\n`;
+                fullContent += toolInfo;
+                updateMessage(activeConversationId, assistantMessage.id, {
+                  content: fullContent,
+                });
+              } else if (data.type === "tool_result") {
+                // Show tool result in the message - format nicely
+                let resultStr: string;
+                try {
+                  // Ensure deep stringification of the result
+                  resultStr = JSON.stringify(data.result, (key, value) => {
+                    // Handle any edge cases where objects might not serialize properly
+                    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+                      return value;
+                    }
+                    return value;
+                  }, 2);
+                } catch {
+                  resultStr = String(data.result);
+                }
+
+                // For list_directory, format more nicely
+                if (data.name === 'list_directory' && data.result?.entries) {
+                  const entries = data.result.entries;
+                  const fileList = entries.map((e: { name: string; type: string; size?: number }) =>
+                    `${e.type === 'directory' ? '📁' : '📄'} ${e.name}${e.size ? ` (${e.size} bytes)` : ''}`
+                  ).join('\n');
+                  resultStr = `Found ${entries.length} items:\n${fileList}`;
+                }
+
+                const resultInfo = `\n📋 **Result from \`${data.name}\`:**\n\`\`\`\n${resultStr}\n\`\`\`\n`;
+                fullContent += resultInfo;
                 updateMessage(activeConversationId, assistantMessage.id, {
                   content: fullContent,
                 });
