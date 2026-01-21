@@ -192,30 +192,55 @@ You are an AGENT - you take action, you don't ask questions. If the user says "l
               } else if (data.type === "tool_result") {
                 // Show tool result in the message - format nicely
                 let resultStr: string;
+                const result = data.result;
+
                 try {
-                  // Ensure deep stringification of the result
-                  resultStr = JSON.stringify(data.result, (key, value) => {
-                    // Handle any edge cases where objects might not serialize properly
-                    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-                      return value;
-                    }
-                    return value;
-                  }, 2);
-                } catch {
-                  resultStr = String(data.result);
+                  // Handle different result types properly
+                  if (typeof result === 'string') {
+                    resultStr = result;
+                  } else if (result === null || result === undefined) {
+                    resultStr = 'null';
+                  } else {
+                    // Deep stringify with proper indentation
+                    resultStr = JSON.stringify(result, null, 2);
+                  }
+                } catch (e) {
+                  resultStr = `Error serializing result: ${e}`;
                 }
 
                 // For list_directory, format more nicely
-                if (data.name === 'list_directory' && data.result?.entries) {
-                  const entries = data.result.entries;
+                if (data.name === 'list_directory' && result?.entries) {
+                  const entries = result.entries;
                   const fileList = entries.map((e: { name: string; type: string; size?: number }) =>
                     `${e.type === 'directory' ? '📁' : '📄'} ${e.name}${e.size ? ` (${e.size} bytes)` : ''}`
                   ).join('\n');
                   resultStr = `Found ${entries.length} items:\n${fileList}`;
                 }
 
+                // For read_file, show content with preview
+                if (data.name === 'read_file' && result?.content) {
+                  const content = result.content;
+                  resultStr = content.length > 1000
+                    ? `${content.substring(0, 1000)}...\n\n(${content.length} characters total)`
+                    : content;
+                }
+
+                // For write_file/edit_file, show friendly success message
+                if ((data.name === 'write_file' || data.name === 'edit_file') && result?.success) {
+                  resultStr = `✅ ${result.message || 'Operation completed successfully'}`;
+                  if (result.path) resultStr += `\nPath: ${result.path}`;
+                  if (result.bytesWritten) resultStr += `\nBytes written: ${result.bytesWritten}`;
+                }
+
                 const resultInfo = `\n📋 **Result from \`${data.name}\`:**\n\`\`\`\n${resultStr}\n\`\`\`\n`;
                 fullContent += resultInfo;
+                updateMessage(activeConversationId, assistantMessage.id, {
+                  content: fullContent,
+                });
+              } else if (data.type === "compaction") {
+                // Show compaction notification in the message
+                const compactionInfo = `\n💫 *Context optimized: ${data.original_tokens.toLocaleString()} → ${data.compacted_tokens.toLocaleString()} tokens*\n`;
+                fullContent += compactionInfo;
                 updateMessage(activeConversationId, assistantMessage.id, {
                   content: fullContent,
                 });

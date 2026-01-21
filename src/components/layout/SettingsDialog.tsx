@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
     Dialog,
     DialogContent,
@@ -25,26 +25,35 @@ import { useSettingsStore, useUIStore } from "@/stores";
 import { cn } from "@/lib/utils";
 import { AIProvider } from "@/types";
 
+interface ModelInfo {
+    id: string;
+    name: string;
+    description?: string;
+}
+
+const defaultModels: Record<AIProvider, string[]> = {
+    gemini: ["gemini-2.0-flash-exp", "gemini-1.5-pro", "gemini-1.5-flash"],
+    openai: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
+    anthropic: ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022"],
+};
+
 const providers = [
     {
         id: "gemini" as AIProvider,
         name: "Google Gemini",
         icon: Sparkles,
-        models: ["gemini-2.0-flash-exp", "gemini-1.5-pro", "gemini-1.5-flash"],
         color: "from-blue-500 to-cyan-500",
     },
     {
         id: "openai" as AIProvider,
         name: "OpenAI",
         icon: Zap,
-        models: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
         color: "from-green-500 to-emerald-500",
     },
     {
         id: "anthropic" as AIProvider,
         name: "Anthropic",
         icon: Bot,
-        models: ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022"],
         color: "from-orange-500 to-amber-500",
     },
 ];
@@ -60,6 +69,61 @@ export function SettingsDialog() {
     const { settings, apiKeys, activeModel, updateSettings, setApiKey, setActiveModel } =
         useSettingsStore();
     const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
+    const [fetchedModels, setFetchedModels] = useState<Record<string, ModelInfo[]>>({});
+    const [loadingModels, setLoadingModels] = useState<Record<string, boolean>>({});
+    const [modelError, setModelError] = useState<Record<string, string>>({});
+
+    // Fetch models from provider API
+    const fetchModels = useCallback(async (provider: AIProvider) => {
+        const apiKey = apiKeys[provider];
+        if (!apiKey) return;
+
+        setLoadingModels(prev => ({ ...prev, [provider]: true }));
+        setModelError(prev => ({ ...prev, [provider]: '' }));
+
+        try {
+            const response = await fetch('/api/models', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider, apiKey }),
+            });
+
+            const data = await response.json();
+
+            if (data.error) {
+                setModelError(prev => ({ ...prev, [provider]: data.error }));
+            } else if (data.models) {
+                setFetchedModels(prev => ({ ...prev, [provider]: data.models }));
+            }
+        } catch (error) {
+            setModelError(prev => ({ ...prev, [provider]: 'Failed to fetch models' }));
+        } finally {
+            setLoadingModels(prev => ({ ...prev, [provider]: false }));
+        }
+    }, [apiKeys]);
+
+    // Fetch models when API key changes
+    useEffect(() => {
+        const provider = settings.aiProvider;
+        const apiKey = apiKeys[provider];
+
+        if (apiKey && !fetchedModels[provider]) {
+            fetchModels(provider);
+        }
+    }, [settings.aiProvider, apiKeys, fetchedModels, fetchModels]);
+
+    // Get models for current provider
+    const getCurrentModels = (): { id: string; name: string }[] => {
+        const provider = settings.aiProvider;
+        const fetched = fetchedModels[provider];
+
+        if (fetched && fetched.length > 0) {
+            return fetched.map(m => ({ id: m.id, name: m.name }));
+        }
+
+        // Fall back to defaults
+        return defaultModels[provider].map(id => ({ id, name: id }));
+    };
 
     const selectedProvider = providers.find((p) => p.id === settings.aiProvider);
 
@@ -164,27 +228,57 @@ export function SettingsDialog() {
 
                         {/* Model Selection */}
                         <div>
-                            <label className="text-sm font-medium text-white/70 mb-3 block">
-                                Model
-                            </label>
-                            <div className="space-y-2">
-                                {selectedProvider?.models.map((model) => (
+                            <div className="flex items-center justify-between mb-3">
+                                <label className="text-sm font-medium text-white/70">
+                                    Model
+                                </label>
+                                {apiKeys[settings.aiProvider] && (
                                     <button
-                                        key={model}
-                                        onClick={() => setActiveModel(model)}
-                                        className={cn(
-                                            "w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-all duration-200",
-                                            activeModel === model
-                                                ? "border-violet-500/50 bg-violet-500/10"
-                                                : "border-white/10 bg-white/5 hover:bg-white/10"
-                                        )}
+                                        onClick={() => {
+                                            setFetchedModels(prev => ({ ...prev, [settings.aiProvider]: [] }));
+                                            fetchModels(settings.aiProvider);
+                                        }}
+                                        className="text-xs text-violet-400 hover:text-violet-300 transition-colors"
+                                        disabled={loadingModels[settings.aiProvider]}
                                     >
-                                        <span className="text-sm text-white">{model}</span>
-                                        {activeModel === model && (
-                                            <Check className="w-4 h-4 text-violet-400" />
-                                        )}
+                                        {loadingModels[settings.aiProvider] ? 'Loading...' : '↻ Refresh'}
                                     </button>
-                                ))}
+                                )}
+                            </div>
+                            {modelError[settings.aiProvider] && (
+                                <p className="text-xs text-red-400 mb-2">
+                                    ⚠️ {modelError[settings.aiProvider]}
+                                </p>
+                            )}
+                            <div className="space-y-2">
+                                {loadingModels[settings.aiProvider] ? (
+                                    <div className="flex items-center justify-center py-4 text-white/50 text-sm">
+                                        <span className="animate-pulse">Loading models...</span>
+                                    </div>
+                                ) : (
+                                    getCurrentModels().map((model) => (
+                                        <button
+                                            key={model.id}
+                                            onClick={() => setActiveModel(model.id)}
+                                            className={cn(
+                                                "w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-all duration-200",
+                                                activeModel === model.id
+                                                    ? "border-violet-500/50 bg-violet-500/10"
+                                                    : "border-white/10 bg-white/5 hover:bg-white/10"
+                                            )}
+                                        >
+                                            <div className="flex flex-col items-start">
+                                                <span className="text-sm text-white">{model.name}</span>
+                                                {model.id !== model.name && (
+                                                    <span className="text-xs text-white/40">{model.id}</span>
+                                                )}
+                                            </div>
+                                            {activeModel === model.id && (
+                                                <Check className="w-4 h-4 text-violet-400" />
+                                            )}
+                                        </button>
+                                    ))
+                                )}
                             </div>
                         </div>
                     </TabsContent>

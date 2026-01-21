@@ -26,22 +26,22 @@
 .dark {
   --background: 222.2 84% 4.9%;
   --foreground: 210 40% 98%;
-  --card: 222.2 84% 4.9%;
+  --card: 222.2 47% 11%;
   --card-foreground: 210 40% 98%;
-  --popover: 222.2 84% 4.9%;
+  --popover: 222.2 47% 11%;
   --popover-foreground: 210 40% 98%;
   --primary: 262 83% 58%;
   --primary-foreground: 210 40% 98%;
   --secondary: 217.2 32.6% 17.5%;
   --secondary-foreground: 210 40% 98%;
   --muted: 217.2 32.6% 17.5%;
-  --muted-foreground: 215 20.2% 65.1%;
+  --muted-foreground: 215 20% 75%;
   --accent: 217.2 32.6% 17.5%;
   --accent-foreground: 210 40% 98%;
   --destructive: 0 62.8% 50.6%;
   --destructive-foreground: 210 40% 98%;
-  --border: 217.2 32.6% 17.5%;
-  --input: 217.2 32.6% 17.5%;
+  --border: 217.2 32.6% 25%;
+  --input: 217.2 32.6% 20%;
   --ring: 262 83% 58%;
 }
 
@@ -438,4 +438,69 @@
 
 .light .hover\:bg-white\/5:hover {
   background: rgba(0, 0, 0, 0.03);
+}
+
+/* ==========================================================
+   DARK MODE HIGH-CONTRAST OVERRIDES (WCAG AA Compliance)
+   Minimum contrast ratio: 4.5:1 for normal text, 3:1 for large text
+   ========================================================== */
+
+.dark {
+  color-scheme: dark;
+}
+
+/* Override low-opacity text colors with high-contrast alternatives */
+.dark .text-white\/70 {
+  color: #e2e8f0 !important;
+  /* slate-200 - much more visible */
+}
+
+.dark .text-white\/60 {
+  color: #cbd5e1 !important;
+  /* slate-300 */
+}
+
+.dark .text-white\/50 {
+  color: #94a3b8 !important;
+  /* slate-400 - still meets AA for large text */
+}
+
+.dark .text-white\/40 {
+  color: #94a3b8 !important;
+  /* slate-400 - boosted from 40% opacity */
+}
+
+.dark .text-white\/30 {
+  color: #64748b !important;
+  /* slate-500 - visible but subtle */
+}
+
+/* Ensure borders are visible */
+.dark .border-white\/5 {
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.dark .border-white\/10 {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.dark .border-white\/20 {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* Better background contrast for interactive elements */
+.dark .bg-white\/5 {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.dark .bg-white\/10 {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.dark .hover\:bg-white\/10:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.dark .hover\:bg-white\/5:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
